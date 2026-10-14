@@ -57,11 +57,13 @@ def init_project(args):
     print("Edit the master CV and review search titles/countries before the first live run.")
 
 
-def daily():
+def daily(force: bool = False):
+    from .run import expire_provider_holds
     cfg = load_settings()
     tz = ZoneInfo(str(cfg["profile"].get("timezone", "UTC")))
     today = datetime.now(tz).date().isoformat()
     db = db_path(cfg)
+    expire_provider_holds(db)
     if not db.exists():
         result = execute(live=True)
         print(json.dumps(result, indent=2, sort_keys=True))
@@ -73,11 +75,11 @@ def daily():
                WHERE stage NOT IN ('completed','failed')
                ORDER BY created_at"""
         ).fetchall()
-        if len(unresolved) > 1:
+        if len(unresolved) > 1 and not force:
             raise RuntimeError("multiple_unresolved_runs")
         if unresolved:
             row = unresolved[0]
-            if str(row["run_date"]) != today:
+            if str(row["run_date"]) != today and not force:
                 raise RuntimeError(
                     f"older_unresolved_run:{row['run_id']}:{row['run_date']}:{row['stage']}"
                 )
@@ -95,6 +97,17 @@ def daily():
         store.close()
     result = execute(live=True, resume_run_id=run_id)
     print(json.dumps(result, indent=2, sort_keys=True))
+
+
+def recover(reason: str = "manual_recovery"):
+    from .run import recover_stale_runs
+    cfg = load_settings()
+    db = db_path(cfg)
+    if not db.exists():
+        print(json.dumps({"status": "not_initialized"}))
+        return
+    affected = recover_stale_runs(db, reason)
+    print(json.dumps({"recovered": affected, "reason": reason}))
 
 
 def status():
@@ -163,11 +176,17 @@ def main():
     init.add_argument("--cv", help="Path to a prepared master-CV markdown file.")
 
     sub.add_parser("preflight", help="Check whether a new live run is allowed.")
-    sub.add_parser("run", help="Start one new live run.")
+    run_parser = sub.add_parser("run", help="Start one new live run.")
+    run_parser.add_argument("--backend", choices=["python", "node"], default="python",
+                            help="Collection backend to use")
     resume = sub.add_parser("resume", help="Resume one paused same-day run.")
     resume.add_argument("run_id")
-    sub.add_parser("daily", help="Idempotent scheduled daily entry point.")
+    daily_parser = sub.add_parser("daily", help="Idempotent scheduled daily entry point.")
+    daily_parser.add_argument("--force", action="store_true",
+                              help="Override cross-day and multiple-unresolved blocks")
     sub.add_parser("status", help="Show recent run state.")
+    recover_parser = sub.add_parser("recover", help="Mark all unresolved runs as failed")
+    recover_parser.add_argument("--reason", default="manual_recovery")
     schedule_parser = sub.add_parser("schedule", help="Print or install a cron schedule.")
     schedule_parser.add_argument("--hour", type=int, default=5)
     schedule_parser.add_argument("--minute", type=int, default=0)
@@ -186,9 +205,11 @@ def main():
             indent=2, sort_keys=True,
         ))
     elif args.command == "daily":
-        daily()
+        daily(force=args.force)
     elif args.command == "status":
         status()
+    elif args.command == "recover":
+        recover(reason=args.reason)
     elif args.command == "schedule":
         schedule(args)
 

@@ -78,6 +78,40 @@ def acquire_lock(cfg: dict):
 def v2_state_gate(db_file: Path):
     if not db_file.is_file():
         return {"provider_hold": None, "unresolved_runs": []}
+    return {"provider_hold": None, "unresolved_runs": []}
+
+
+def expire_provider_holds(db_file: Path, ttl_seconds: float | None = None) -> None:
+    """Auto-expire provider holds older than the configured TTL."""
+    import sqlite3
+    cfg = load_settings()
+    ttl = ttl_seconds or float(cfg.get("runtime", {}).get("provider_hold_ttl_seconds", 14400))
+    db = sqlite3.connect(db_file)
+    try:
+        db.execute(
+            """DELETE FROM provider_holds
+               WHERE active=1 AND created_at < ?""",
+            (time.time() - ttl,),
+        )
+        db.commit()
+    finally:
+        db.close()
+
+
+def recover_stale_runs(db_file: Path, reason: str = "manual_recovery") -> int:
+    """Mark all unresolved runs as failed. Returns count of affected rows."""
+    import sqlite3
+    db = sqlite3.connect(db_file)
+    try:
+        cur = db.execute(
+            """UPDATE runs SET stage=?, failure_reason=?
+               WHERE stage NOT IN ('completed','failed')""",
+            (Stage.FAILED.value, reason),
+        )
+        db.commit()
+        return cur.rowcount
+    finally:
+        db.close()
     uri = "file:" + str(db_file) + "?mode=ro"
     with sqlite3.connect(uri, uri=True, timeout=2) as db:
         db.row_factory = sqlite3.Row
@@ -133,8 +167,10 @@ def make_runtime(store: Store, run_id: str):
 
 def run_discovery(store: Store, pipeline: Pipeline, run_id: str, runtime, budget, pacer):
     cfg = runtime_config()
+    results_per_query_raw = cfg["search"].get("results_per_query", 35)
+    results_per_query = None if results_per_query_raw in (None, "unlimited", "all") else int(results_per_query_raw)
     client = LinkedInGuestClient(
-        results_per_query=int(cfg["search"].get("results_per_query", 35)),
+        results_per_query=results_per_query,
         hours_old=int(cfg["search"].get("hours_old", 24)),
         minimum_gap=runtime.minimum_request_gap_seconds,
         budget=budget,

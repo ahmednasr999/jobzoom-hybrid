@@ -1,5 +1,8 @@
 from __future__ import annotations
 import hashlib
+import json
+import logging
+import random
 import re
 import time
 from datetime import date, datetime, timedelta
@@ -13,6 +16,8 @@ from requests.adapters import HTTPAdapter
 from .discovery import QueryResult
 from .model import QueryKey
 
+logger = logging.getLogger(__name__)
+
 
 BASE = "https://www.linkedin.com"
 SEARCH_PATH = "/jobs-guest/jobs/api/seeMoreJobPostings/search"
@@ -23,7 +28,8 @@ CAIRO = ZoneInfo("Africa/Cairo")
 
 
 class PacedGuestSession(requests.Session):
-    def __init__(self, minimum_gap: float, budget=None, phase="provider", pacer=None):
+    def __init__(self, minimum_gap: float, budget=None, phase="provider", pacer=None,
+                 backoff_base: float = 60.0, backoff_max: float = 1800.0):
         super().__init__()
         if minimum_gap < 4:
             raise ValueError("minimum_gap_too_small")
@@ -31,6 +37,8 @@ class PacedGuestSession(requests.Session):
         self.budget = budget
         self.phase = phase
         self.pacer = pacer
+        self.backoff_base = backoff_base
+        self.backoff_max = backoff_max
         self.last_dispatch = None
         self.request_count = 0
         self.last_status = None
@@ -43,6 +51,16 @@ class PacedGuestSession(requests.Session):
             "Accept": "text/html,application/xhtml+xml",
         })
         self.mount("https://", HTTPAdapter(max_retries=0))
+
+    def _apply_backoff(self, status_code: int, attempt: int) -> None:
+        """Apply exponential backoff with jitter for rate-limit responses."""
+        if status_code != 429 or attempt <= 0:
+            return
+        delay = min(self.backoff_base * (2 ** (attempt - 1)), self.backoff_max)
+        jitter = random.uniform(0, delay * 0.1)
+        total = delay + jitter
+        logger.warning("Rate limited (429). Backing off %.1fs before retry %d", total, attempt)
+        time.sleep(total)
 
     def get(self, url, **kwargs):
         kwargs["allow_redirects"] = False
@@ -78,6 +96,7 @@ class PacedGuestSession(requests.Session):
             self.restriction = "redirect_response"
         elif response.status_code == 429:
             self.restriction = "provider_rate_limit"
+            self._apply_backoff(response.status_code, self.request_count)
         elif response.status_code in (401, 403, 999):
             self.restriction = "provider_access_restriction"
         elif response.status_code >= 500:
@@ -215,7 +234,7 @@ def posted_date_valid(value: str, today: date | None = None) -> bool:
 
 
 class LinkedInGuestClient:
-    def __init__(self, results_per_query: int, hours_old: int, minimum_gap: float,
+    def __init__(self, results_per_query: int | None, hours_old: int, minimum_gap: float,
                  budget=None, pacer=None):
         self.results_per_query = results_per_query
         self.hours_old = hours_old
@@ -232,7 +251,8 @@ class LinkedInGuestClient:
         page_signatures = set()
         start = 0
         validated_exhaustion = False
-        while len(jobs) < self.results_per_query and start < 1000:
+        limit = self.results_per_query if self.results_per_query is not None else float("inf")
+        while len(jobs) < limit and start < 1000:
             response = session.get(
                 BASE + SEARCH_PATH,
                 params={
@@ -290,14 +310,15 @@ class LinkedInGuestClient:
                     continue
                 seen.add(linkedin_id)
                 jobs.append(job)
-                if len(jobs) >= self.results_per_query:
+                if len(jobs) >= limit:
                     break
             start += raw_count
-        if (not session.restriction and len(jobs) < self.results_per_query
+        if (not session.restriction and len(jobs) < limit
                 and not validated_exhaustion and start >= 1000):
             mark_body_restriction(session, "pagination_limit_unresolved")
+        capped = jobs if self.results_per_query is None else jobs[:self.results_per_query]
         return QueryResult(
-            jobs=jobs[:self.results_per_query],
+            jobs=capped,
             request_count=session.request_count,
             status_code=session.last_status or 0,
             restriction=session.restriction,

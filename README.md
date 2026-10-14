@@ -61,6 +61,40 @@ Then:
 .venv/bin/jobzoom status
 ~~~
 
+### Unlimited pagination
+
+By default each search stops after 35 results. To collect every available page, set:
+
+~~~json
+"results_per_query": null
+~~~
+
+in config/jobzoom.json. The search loop will then continue until LinkedIn returns an empty page, a repeated page, or a known exhaustion fingerprint.
+
+### Recovery commands
+
+If a run is stuck or an older unresolved run blocks a new cycle:
+
+~~~bash
+# Mark all unresolved runs as failed
+.venv/bin/jobzoom recover
+
+# Override cross-day / multiple-unresolved blocks on next daily run
+.venv/bin/jobzoom daily --force
+~~~
+
+Provider holds auto-expire after `provider_hold_ttl_seconds` (default 4 hours).
+
+### Node.js backend
+
+The legacy Node.js collection scripts are available as an alternative backend:
+
+~~~bash
+.venv/bin/jobzoom run --backend node
+~~~
+
+This uses `legacy/node/scrape_searches.js` and `legacy/node/fetch_job_details.js` via `NodeCollectionAdapter`.
+
 ## Daily schedule
 
 Print the cron entry:
