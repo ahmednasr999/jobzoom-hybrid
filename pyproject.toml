@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=70", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jobzoom-hybrid"
+version = "0.1.0"
+description = "Hybrid LinkedIn job discovery: combining JobZoom V2 robust provider handling with portable Node-based LinkedIn collection and handoff tooling."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "beautifulsoup4>=4.12",
+  "reportlab>=4.0",
+  "requests>=2.31"
+]
+
+[project.scripts]
+jobzoom-hybrid = "jobzoom_v2.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

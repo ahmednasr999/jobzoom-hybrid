@@ -1,0 +1,72 @@
+{
+  "profile": {
+    "name": "Your Name",
+    "timezone": "Africa/Cairo",
+    "cv_path": "config/cv-master.md"
+  },
+  "search": {
+    "titles": [
+      "Chief Digital Officer",
+      "VP Digital Transformation",
+      "Head of Digital Transformation",
+      "Director Digital Transformation",
+      "SVP Digital Strategy",
+      "Chief Operating Officer",
+      "VP Technology Transformation",
+      "Head of Enterprise Transformation",
+      "Director Transformation",
+      "Director Strategy",
+      "Head of Strategy",
+      "Head of PMO",
+      "VP PMO",
+      "Director PMO",
+      "Head of Program Management",
+      "Director Program Management",
+      "Program Director",
+      "Director Portfolio Management",
+      "Head of Portfolio Management",
+      "VP HealthTech",
+      "Head of Healthcare IT",
+      "Director Healthcare Technology",
+      "Director Healthcare Transformation",
+      "Head of AI Transformation",
+      "Director Enterprise Technology"
+    ],
+    "countries": [
+      "United Arab Emirates",
+      "Saudi Arabia",
+      "Qatar",
+      "Kuwait",
+      "Bahrain",
+      "Oman"
+    ],
+    "hours_old": 24,
+    "results_per_query": 35
+  },
+  "runtime": {
+    "max_requests_per_run": 1200,
+    "max_requests_rolling_24h": 2000,
+    "minimum_request_gap_seconds": 4.0,
+    "query_checkpoint_ttl_seconds": 21600,
+    "description_ttl_seconds": 86400
+  },
+  "scoring": {
+    "model": "openai/gpt-6.1-sol",
+    "max_calls_per_day": 80,
+    "report_threshold": 70,
+    "readiness_threshold": 82
+  },
+  "telegram": {
+    "target": "YOUR_TELEGRAM_TARGET"
+  },
+  "openclaw": {
+    "binary": "openclaw",
+    "gateway_url": "http://127.0.0.1:18789",
+    "media_root": "~/.openclaw/media/jobzoom"
+  },
+  "paths": {
+    "data_dir": "data",
+    "reports_dir": "reports/runs"
+  },
+  "compensation_targets": {}
+}

@@ -1,0 +1,33 @@
+# User configuration and personal data
+config/jobzoom.json
+config/cv-master.md
+
+# Runtime state
+data/
+reports/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.log
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
