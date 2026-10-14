@@ -69,34 +69,56 @@ class PacedGuestSession(requests.Session):
     def send(self, request, **kwargs):
         if request.headers.get("Authorization") or request.headers.get("Cookie"):
             raise RuntimeError("credentials_not_allowed")
-        if self.pacer is not None:
-            self.pacer.wait()
-        else:
-            now = time.monotonic()
-            if self.last_dispatch is not None:
-                wait = self.minimum_gap - (now - self.last_dispatch)
-                if wait > 0:
-                    time.sleep(wait)
-            self.last_dispatch = time.monotonic()
-        request_id = self.budget.reserve(self.phase, None) if self.budget else None
-        self.request_count += 1
-        try:
-            response = super().send(request, **kwargs)
-        except Exception:
+
+        max_retries = 3
+        for attempt in range(max_retries + 1):
+            if self.pacer is not None:
+                self.pacer.wait()
+            else:
+                now = time.monotonic()
+                if self.last_dispatch is not None:
+                    wait = self.minimum_gap - (now - self.last_dispatch)
+                    if wait > 0:
+                        time.sleep(wait)
+                self.last_dispatch = time.monotonic()
+            request_id = self.budget.reserve(self.phase, None) if self.budget else None
+            self.request_count += 1
+            try:
+                response = super().send(request, **kwargs)
+            except Exception:
+                if request_id:
+                    self.events.append({
+                        "request_id": request_id,
+                        "status_code": 0,
+                        "outcome": "transport_exception_reserved",
+                    })
+                raise
+            self.last_status = response.status_code
+            self.cookies.clear()
+
+            if response.status_code == 429 and attempt < max_retries:
+                self._apply_backoff(response.status_code, attempt + 1)
+                if request_id:
+                    self.events.append({
+                        "request_id": request_id,
+                        "status_code": 429,
+                        "outcome": "rate_limited_retry",
+                    })
+                continue
+
             if request_id:
+                final_outcome = "provider_rate_limit" if (response.status_code == 429 and attempt == max_retries) else "ok"
                 self.events.append({
                     "request_id": request_id,
-                    "status_code": 0,
-                    "outcome": "transport_exception_reserved",
+                    "status_code": response.status_code,
+                    "outcome": final_outcome,
                 })
-            raise
-        self.last_status = response.status_code
-        self.cookies.clear()
+            break
+
         if response.is_redirect or response.is_permanent_redirect:
             self.restriction = "redirect_response"
         elif response.status_code == 429:
             self.restriction = "provider_rate_limit"
-            self._apply_backoff(response.status_code, self.request_count)
         elif response.status_code in (401, 403, 999):
             self.restriction = "provider_access_restriction"
         elif response.status_code >= 500:
