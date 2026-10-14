@@ -15,6 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
+jobzoom = "jobzoom_v2.cli:main"
 jobzoom-hybrid = "jobzoom_v2.cli:main"
 
 [tool.setuptools.packages.find]
