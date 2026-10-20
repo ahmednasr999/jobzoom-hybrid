@@ -50,7 +50,8 @@
     "minimum_request_gap_seconds": 4.0,
     "query_checkpoint_ttl_seconds": 21600,
     "description_ttl_seconds": 86400,
-    "provider_hold_ttl_seconds": 14400
+    "provider_hold_ttl_seconds": 14400,
+    "auto_fail_stale_runs": true
   },
   "scoring": {
     "model": "openai/gpt-6.1-sol",

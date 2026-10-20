@@ -90,6 +90,11 @@ Provider holds auto-expire after `provider_hold_ttl_seconds` (default 4 hours).
 Live commands (`run`, `daily`, `resume`) auto-expire holds older than the TTL before
 checking state, so you normally only need `clear-hold` to resume sooner than the TTL.
 
+Transient network/server errors are retried automatically (30s/60s/120s backoff)
+instead of pausing the run. An unresolved run from a previous day is auto-failed
+by `daily` (`auto_fail_stale_runs`, default true) so the next scheduled cycle
+starts cleanly. See `TRANSPORT_HARDENING.md`.
+
 ### Node.js backend
 
 The legacy Node.js collection scripts are available as an alternative backend:

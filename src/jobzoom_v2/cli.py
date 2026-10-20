@@ -58,7 +58,7 @@ def init_project(args):
 
 
 def daily(force: bool = False):
-    from .run import expire_provider_holds
+    from .run import expire_provider_holds, recover_stale_runs
     cfg = load_settings()
     tz = ZoneInfo(str(cfg["profile"].get("timezone", "UTC")))
     today = datetime.now(tz).date().isoformat()
@@ -77,13 +77,19 @@ def daily(force: bool = False):
         ).fetchall()
         if len(unresolved) > 1 and not force:
             raise RuntimeError("multiple_unresolved_runs")
+        auto_fail_stale = bool(cfg.get("runtime", {}).get("auto_fail_stale_runs", True))
         if unresolved:
             row = unresolved[0]
-            if str(row["run_date"]) != today and not force:
-                raise RuntimeError(
-                    f"older_unresolved_run:{row['run_id']}:{row['run_date']}:{row['stage']}"
-                )
-            run_id = str(row["run_id"])
+            if str(row["run_date"]) != today:
+                if force or auto_fail_stale:
+                    recover_stale_runs(db, "stale_run_auto_failed")
+                    run_id = None
+                else:
+                    raise RuntimeError(
+                        f"older_unresolved_run:{row['run_id']}:{row['run_date']}:{row['stage']}"
+                    )
+            else:
+                run_id = str(row["run_id"])
         else:
             completed = store.db.execute(
                 "SELECT COUNT(*) FROM runs WHERE run_date=? AND stage='completed'",

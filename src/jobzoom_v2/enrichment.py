@@ -7,7 +7,12 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from .budget import BudgetExceeded
-from .discovery import PROVIDER_HOLD_REASONS
+from .discovery import (
+    PROVIDER_HOLD_REASONS,
+    TRANSIENT_ATTEMPTS,
+    backoff_delay,
+    is_transient_restriction,
+)
 from .store import Store
 
 
@@ -49,37 +54,43 @@ class EnrichmentEngine:
             if linkedin_id in existing:
                 enriched.append(existing[linkedin_id])
                 continue
-            try:
-                result = self.client.fetch(linkedin_id)
-            except BudgetExceeded as exc:
-                return {
-                    "complete": False,
-                    "restriction": str(exc),
-                    "requests": requests,
-                    "jobs": enriched,
-                }
-            except (requests.RequestException, OSError, TimeoutError) as exc:
-                return {
-                    "complete": False,
-                    "restriction": "transport_exception:" + type(exc).__name__,
-                    "requests": requests,
-                    "jobs": enriched,
-                }
-            requests += result.request_count
-            events = result.request_events or tuple(
-                {"status_code": result.status_code,
-                 "outcome": result.restriction or "ok"}
-                for _ in range(result.request_count)
-            )
-            if len(events) != result.request_count:
-                raise ValueError("request_evidence_count_mismatch")
-            for event in events:
-                if event.get("request_id"):
-                    continue
-                self.store.record_request(
-                    run_id, uuid.uuid4().hex, "enrichment", None,
-                    int(event["status_code"]), str(event["outcome"]),
+            result = None
+            for attempt in range(TRANSIENT_ATTEMPTS):
+                try:
+                    result = self.client.fetch(linkedin_id)
+                except BudgetExceeded as exc:
+                    return {
+                        "complete": False,
+                        "restriction": str(exc),
+                        "requests": requests,
+                        "jobs": enriched,
+                    }
+                except (requests.RequestException, OSError, TimeoutError) as exc:
+                    reason = "transport_exception:" + type(exc).__name__
+                    result = DescriptionResult(
+                        description="", request_count=1, status_code=0,
+                        restriction=reason,
+                        request_events=({"status_code": 0, "outcome": reason},),
+                    )
+                requests += result.request_count
+                events = result.request_events or tuple(
+                    {"status_code": result.status_code,
+                     "outcome": result.restriction or "ok"}
+                    for _ in range(result.request_count)
                 )
+                if len(events) != result.request_count:
+                    raise ValueError("request_evidence_count_mismatch")
+                for event in events:
+                    if event.get("request_id"):
+                        continue
+                    self.store.record_request(
+                        run_id, uuid.uuid4().hex, "enrichment", None,
+                        int(event["status_code"]), str(event["outcome"]),
+                    )
+                if not is_transient_restriction(result.restriction):
+                    break
+                if attempt < TRANSIENT_ATTEMPTS - 1:
+                    time.sleep(backoff_delay(attempt))
             if result.restriction:
                 if result.restriction in PROVIDER_HOLD_REASONS:
                     self.store.activate_provider_hold(run_id, result.restriction)
