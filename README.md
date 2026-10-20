@@ -81,9 +81,14 @@ If a run is stuck or an older unresolved run blocks a new cycle:
 
 # Override cross-day / multiple-unresolved blocks on next daily run
 .venv/bin/jobzoom daily --force
+
+# Release an active provider hold immediately
+.venv/bin/jobzoom clear-hold
 ~~~
 
 Provider holds auto-expire after `provider_hold_ttl_seconds` (default 4 hours).
+Live commands (`run`, `daily`, `resume`) auto-expire holds older than the TTL before
+checking state, so you normally only need `clear-hold` to resume sooner than the TTL.
 
 ### Node.js backend
 

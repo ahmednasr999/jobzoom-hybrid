@@ -506,6 +506,10 @@ class Store:
         ).fetchone()
         return dict(row) if row else None
 
+    def clear_provider_hold(self):
+        with self.db:
+            self.db.execute("DELETE FROM provider_holds WHERE id=1")
+
 
     def completed_query_times(self, run_id: str) -> list[float]:
         rows = self.db.execute(

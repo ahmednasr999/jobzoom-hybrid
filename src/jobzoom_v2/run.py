@@ -78,7 +78,21 @@ def acquire_lock(cfg: dict):
 def v2_state_gate(db_file: Path):
     if not db_file.is_file():
         return {"provider_hold": None, "unresolved_runs": []}
-    return {"provider_hold": None, "unresolved_runs": []}
+    uri = "file:" + str(db_file) + "?mode=ro"
+    with sqlite3.connect(uri, uri=True, timeout=2) as db:
+        db.row_factory = sqlite3.Row
+        hold = db.execute(
+            "SELECT active,reason,run_id,created_at FROM provider_holds WHERE id=1"
+        ).fetchone()
+        runs = db.execute(
+            """SELECT run_id,run_date,stage,failure_reason FROM runs
+               WHERE stage NOT IN ('completed','failed')
+               ORDER BY created_at"""
+        ).fetchall()
+    return {
+        "provider_hold": dict(hold) if hold and hold["active"] else None,
+        "unresolved_runs": [dict(row) for row in runs],
+    }
 
 
 def expire_provider_holds(db_file: Path, ttl_seconds: float | None = None) -> None:
@@ -112,21 +126,6 @@ def recover_stale_runs(db_file: Path, reason: str = "manual_recovery") -> int:
         return cur.rowcount
     finally:
         db.close()
-    uri = "file:" + str(db_file) + "?mode=ro"
-    with sqlite3.connect(uri, uri=True, timeout=2) as db:
-        db.row_factory = sqlite3.Row
-        hold = db.execute(
-            "SELECT active,reason,run_id,created_at FROM provider_holds WHERE id=1"
-        ).fetchone()
-        runs = db.execute(
-            """SELECT run_id,run_date,stage,failure_reason FROM runs
-               WHERE stage NOT IN ('completed','failed')
-               ORDER BY created_at"""
-        ).fetchall()
-    return {
-        "provider_hold": dict(hold) if hold and hold["active"] else None,
-        "unresolved_runs": [dict(row) for row in runs],
-    }
 
 
 
@@ -499,6 +498,8 @@ def validate_resume(store: Store, pipeline: Pipeline, run_id: str, runtime):
 
 def execute(live: bool, resume_run_id: str | None = None):
     cfg = runtime_config()
+    if live:
+        expire_provider_holds(db_path(cfg))
     check = preflight()
     if not live:
         return check

@@ -110,6 +110,20 @@ def recover(reason: str = "manual_recovery"):
     print(json.dumps({"recovered": affected, "reason": reason}))
 
 
+def clear_hold():
+    cfg = load_settings()
+    db = db_path(cfg)
+    if not db.exists():
+        print(json.dumps({"status": "not_initialized"}))
+        return
+    store = Store(db)
+    try:
+        store.clear_provider_hold()
+    finally:
+        store.close()
+    print(json.dumps({"status": "provider_hold_cleared"}))
+
+
 def status():
     cfg = load_settings()
     db = db_path(cfg)
@@ -185,6 +199,7 @@ def main():
     daily_parser.add_argument("--force", action="store_true",
                               help="Override cross-day and multiple-unresolved blocks")
     sub.add_parser("status", help="Show recent run state.")
+    sub.add_parser("clear-hold", help="Release an active provider hold so a new run can start")
     recover_parser = sub.add_parser("recover", help="Mark all unresolved runs as failed")
     recover_parser.add_argument("--reason", default="manual_recovery")
     schedule_parser = sub.add_parser("schedule", help="Print or install a cron schedule.")
@@ -210,6 +225,8 @@ def main():
         status()
     elif args.command == "recover":
         recover(reason=args.reason)
+    elif args.command == "clear-hold":
+        clear_hold()
     elif args.command == "schedule":
         schedule(args)
 
